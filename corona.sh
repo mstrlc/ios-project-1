@@ -45,11 +45,9 @@ print_help()
     echo ""
 }
 
-ARGS=$#
 RUN=""
 COMMAND="none"
 FILES="none"
-USE_AFTER=0
 AFTER_DATETIME="1970-01-01"
 BEFORE_DATETIME="9999-99-99"
 GENDER=""
@@ -92,9 +90,12 @@ do
             shift
             ;;
         -s)
-            USE_GRAPHIC=1
-            WIDTH="$2"
-            shift
+            USE_GRAPHIC="1"
+            if [[ "$2" =~ ^[0-9]+$ ]] ;
+            then
+                WIDTH="$2"
+                shift
+            fi
             shift
             ;;
         *".csv")
@@ -106,21 +107,18 @@ do
     esac
 done
               
-RUN="tail -n +2 | awk -F, 'BEGIN { getline; print \$0 }
-              { if (\$2 >= \"$AFTER_DATETIME\" && \$2 <= \"$BEFORE_DATETIME\" && (\$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\")) print \$0 }'"
+RUN="tail -n +2 | awk -F, '
+            { if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" && (\$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\")) print \$0 }'"
 
 if [ "$FILES" != "none" ];
 then
-    RUN="cat $FILES"
+    RUN="cat $FILES | $RUN"
 fi
 
-# if [ $USE_GRAPHIC = 1 ];
-# then
-# fi
 
 if [ "$COMMAND" = "none" ];
 then
-    printf "id,datum,vek,pohlavi,kraj_nuts_kod,okres_lau_kod,nakaza_v_zahranici,nakaza_zeme_csu_kod,reportovano_khs"
+    printf "id,datum,vek,pohlavi,kraj_nuts_kod,okres_lau_kod,nakaza_v_zahranici,nakaza_zeme_csu_kod,reportovano_khs\\n"
     eval "$RUN"
     exit 0
 fi
@@ -133,39 +131,61 @@ case $COMMAND in
         eval ""
         ;;
     gender)
-        eval "$RUN | awk -F, 'BEGIN { M=0; Z=0} { if (\$4 == \"M\") M+=1 ; else if (\$4 == \"Z\") Z+=1} END { print \"M: \" M \"\\nZ: \" Z } '"
+        eval "$RUN | awk -F, 'BEGIN { M=0; Z=0 } { if (\$4 == \"M\") M+=1 ; else if (\$4 == \"Z\") Z+=1}
+                     END { if ($USE_GRAPHIC == 0) 
+                     {
+                     print \"M: \" M \"\\nZ: \" Z }
+                     else {
+                     printf \"M: \" ; for(c=1;c<M/100000;c++) printf \"\#\" ; printf \"\n\" ;
+                     printf \"Z: \" ; for(c=1;c<Z/100000;c++) printf \"\#\" ; printf \"\n\" 
+                     }}'"
         ;;
     age)
-        eval "$RUN | awk -F, '  BEGIN { ages[0]=0 ; ages[1]=0 ; ages[2]=0 ; ages[3]=0 ; ages[4]=0 ; ages[5]=0 ; ages[6]=0 ; ages[7]=0 ; ages[8]=0 ; ages[9]=0 ; ages[10]=0 ; ages[11]=0 ; ages[12]=0 ; }
-                                            { if (\$3 >= 0 && \$3 <= 5) ages[0]+=1 ;
-                                            else if (\$3 >= 6 && \$3 <= 15) ages[1]+=1 ;
-                                            else if (\$3 >= 16 && \$3 <= 25) ages[2]+=1 ;
-                                            else if (\$3 >= 26 && \$3 <= 35) ages[3]+=1 ;
-                                            else if (\$3 >= 36 && \$3 <= 45) ages[4]+=1 ;
-                                            else if (\$3 >= 46 && \$3 <= 55) ages[5]+=1 ;
-                                            else if (\$3 >= 56 && \$3 <= 65) ages[6]+=1 ;
-                                            else if (\$3 >= 66 && \$3 <= 75) ages[7]+=1 ;
-                                            else if (\$3 >= 76 && \$3 <= 85) ages[8]+=1 ;
-                                            else if (\$3 >= 86 && \$3 <= 95) ages[9]+=1 ;
-                                            else if (\$3 >= 96 && \$3 <= 105) ages[10]+=1 ;
-                                            else if (\$3 >= 106) ages[11]+=1 ;
-                                            else if (\$3 == \"\") ages[12]+=1 ;
-                                            }
-                                            END {
-                                            print \"0-5   : \" ages[0] ;
-                                            print \"6-15  : \" ages[1] ;
-                                            print \"16-25 : \" ages[2] ;
-                                            print \"26-35 : \" ages[4] ;
-                                            print \"36-45 : \" ages[5] ;
-                                            print \"46-55 : \" ages[6] ;
-                                            print \"56-65 : \" ages[7] ;
-                                            print \"66-75 : \" ages[8] ;
-                                            print \"76-85 : \" ages[9] ;
-                                            print \"86-95 : \" ages[10] ;
-                                            print \"96-105: \" ages[11] ;   
-                                            print \">105  : \" ages[11] ;        
-                                            if (ages[12] != 0) print \"None  : \" ages[12] ;                                                                                     
-                                            }'"
+        eval "$RUN | awk -F, -v USE_GRAPHIC=$USE_GRAPHIC 'BEGIN { ages[0]=0 ; ages[1]=0 ; ages[2]=0 ; ages[3]=0 ; ages[4]=0 ; ages[5]=0 ; ages[6]=0 ; ages[7]=0 ; ages[8]=0 ; ages[9]=0 ; ages[10]=0 ; ages[11]=0 ; ages[12]=0 ; }
+                        { if (\$3 >= 0 && \$3 <= 5) ages[0]+=1 ;
+                        else if (\$3 >= 6 && \$3 <= 15) ages[1]+=1 ;
+                        else if (\$3 >= 16 && \$3 <= 25) ages[2]+=1 ;
+                        else if (\$3 >= 26 && \$3 <= 35) ages[3]+=1 ;
+                        else if (\$3 >= 36 && \$3 <= 45) ages[4]+=1 ;
+                        else if (\$3 >= 46 && \$3 <= 55) ages[5]+=1 ;
+                        else if (\$3 >= 56 && \$3 <= 65) ages[6]+=1 ;
+                        else if (\$3 >= 66 && \$3 <= 75) ages[7]+=1 ;
+                        else if (\$3 >= 76 && \$3 <= 85) ages[8]+=1 ;
+                        else if (\$3 >= 86 && \$3 <= 95) ages[9]+=1 ;
+                        else if (\$3 >= 96 && \$3 <= 105) ages[10]+=1 ;
+                        else if (\$3 >= 106) ages[11]+=1 ;
+                        else if (\$3 == \"\") ages[12]+=1 ;
+                        }
+                        END { if ($USE_GRAPHIC == 0) 
+                        {
+                        print \"0-5   : \" ages[0];
+                        print \"6-15  : \" ages[1] ;
+                        print \"16-25 : \" ages[2] ;
+                        print \"26-35 : \" ages[3] ;
+                        print \"36-45 : \" ages[4] ;
+                        print \"46-55 : \" ages[5] ;
+                        print \"56-65 : \" ages[6] ;
+                        print \"66-75 : \" ages[7] ;
+                        print \"76-85 : \" ages[8] ;
+                        print \"86-95 : \" ages[9] ;
+                        print \"96-105: \" ages[10] ;   
+                        print \">105  : \" ages[11] ;        
+                        if (ages[12] != 0) print \"None  : \" ages[12]
+                        } else {
+                        printf \"0-5   : \" ; for(c=1;c<ages[0]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"6-15  : \" ; for(c=1;c<ages[1]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"16-25 : \" ; for(c=1;c<ages[2]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"26-35 : \" ; for(c=1;c<ages[3]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"36-45 : \" ; for(c=1;c<ages[4]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"46-55 : \" ; for(c=1;c<ages[5]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"56-65 : \" ; for(c=1;c<ages[6]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"66-75 : \" ; for(c=1;c<ages[7]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"76-85 : \" ; for(c=1;c<ages[8]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"86-95 : \" ; for(c=1;c<ages[9]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \"96-105: \" ; for(c=1;c<ages[10]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        printf \">105  : \"  ; for(c=1;c<ages[11]/10000;c++) printf \"\#\" ; printf \"\n\" ;
+                        if (ages[12] > 10000) { printf \"None  : \"  ; for(c=1;c<ages[12]/10000;c++) printf \"\#\" ; printf \"\n\" }
+                        }}'"
         ;;
     daily)
         eval "$RUN | awk -F, '{ print \$2 }' | uniq -c | awk -F' ' '{ print \$2 \": \" \$1 }'"
