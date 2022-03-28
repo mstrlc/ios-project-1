@@ -1,0 +1,476 @@
+#! /bin/bash
+
+export POSIXLY_CORRECT=yes
+export LC_NUMERIC=en_US.UTF-8 
+
+print_help()
+{   
+    echo "\033[1mcorona, a covid-19 infections log analyzer\033[0m"
+    echo ""
+    echo "\033[1mUsage: corona [-h] [FILTERS] [COMMAND] [LOG [LOG2 [...]]"
+    echo ""
+    echo "\033[1m-h\033[0m      - print this help message"
+    echo ""
+    echo "\033[1mCOMMAND\033[0m - specify the command, can be one of the following"
+    echo ""
+    echo "  \033[1minfected\033[0m  - count total number of infected persons"
+    echo "  \033[1mmerge\033[0m     - merge multiple files into one, keep the original order"
+    echo "  \033[1mgender\033[0m    - print number of infected for each gender"
+    echo "  \033[1mage\033[0m       - print number of infected for each age group"
+    echo "  \033[1mdaily\033[0m     - print number of infected for each day"
+    echo "  \033[1mmonthly\033[0m   - print number of infected for each month"
+    echo "  \033[1myearly\033[0m    - print number of infected for each year"
+    echo "  \033[1mcountries\033[0m - print number of infected for each country (without CZ)"
+    echo "  \033[1mdistricts\033[0m - print number of infected for each district"
+    echo "  \033[1mregions\033[0m   - print number of infected for each region"
+    echo ""
+    echo "\033[1mFILTERS\033[0m - filter results, multiple filters can be used, each only once"
+    echo ""
+    echo "  \033[1m-a DATETIME\033[0m - after: use only records after the given date (including)"
+    echo "              - \033[3mDATETIME\033[0m format is YYYY-MM-DD"
+    echo ""
+    echo "  \033[1m-a DATETIME\033[0m - before: use only records after the given date (including),"
+    echo "              - \033[3mDATETIME\033[0m format is YYYY-MM-DD"
+    echo ""
+    echo "  \033[1m-g GENDER\033[0m   - use only records with the given gender"
+    echo "              - \033[3mGENDER\033[0m can be \033[3mM\033[0m (men) or \033[3mZM\033[0m (women)"
+    echo ""
+    echo "  \033[1m-s [WIDTH]\033[0m  - when used with commands \033[3mgender, age, daily, monthly, yearly,\033[0m"
+    echo "                \033[3mcountries, districts, regions\033[0m, print data graphically as a"
+    echo "                histogram instead of numbers"
+    echo "              - \033[3mWIDTH\033[0m is optional and specifies the length of the longest line,"
+    echo "                if not given, default values are used."
+}
+
+RUN=""
+COMMAND="none"
+FILES[0]="none"
+FILES_COUNTER=0
+AFTER_DATETIME="1970-01-01"
+BEFORE_DATETIME="9999-99-99"
+GENDER=""
+USE_GRAPHIC=0
+WIDTH=0
+GENDER[0]="M"
+GENDER[1]="Z"
+
+# Get command line arguments
+while [ "$#" -gt 0 ];
+do
+    case "$1" in
+        -h) 
+            print_help
+            exit 0
+            ;;
+        infected | merge | gender | age | daily | monthly | yearly | countries | districts | regions)
+            COMMAND="$1"
+            shift
+            ;;
+        -a)
+            AFTER_DATETIME="$2"
+            shift
+            shift
+            ;;
+        -b)
+            BEFORE_DATETIME="$2"
+            shift
+            shift
+            ;;
+        -g)
+            if [ "$2" = "M" ]; 
+            then
+                GENDER[1]=""
+            elif [ "$2" = "Z" ];
+            then
+                GENDER[0]=""
+            fi
+            shift
+            shift
+            ;;
+        -s)
+            USE_GRAPHIC=1
+            if [[ "$2" =~ ^[0-9]+$ ]] ;
+            then
+                WIDTH="$2"
+                shift
+            fi
+            shift
+            ;;
+        *".csv")
+            FILES[FILES_COUNTER]="$1"
+            FILES_COUNTER=$((FILES_COUNTER+1))
+            shift
+            ;;
+        *)
+            echo "\033[1mERROR:\033[0m Wrong arguments given. See help with -h." 
+            exit 1
+            ;;
+    esac
+done
+
+# Read all files
+if [ "${FILES[0]}" != "none" ];
+then
+    OUTPUT=$(cat "${FILES[0]}")
+    for ((i=1;i<"$FILES_COUNTER";i++));
+    do
+        OUTPUT+=$(tail -n +2 "${FILES[i]}")
+    done
+RUN="echo \"$OUTPUT\" |"
+fi
+
+# Validate input
+
+# Remove empty lines and whitespace, remove header
+RUN=$RUN" awk -F, 'BEGIN { getline } {if ( \$4 !~ /^$/ )
+                        { gsub(/ /,\"\"); print \$0 }
+                    }' | "
+
+# Validate ages
+RUN=$RUN" awk -F, '{ if (\$3 !~ /^$/) { { if (\$3 ~ /^([0-9]+)$/)
+                        { print \$0 }
+                    else
+                        { print \"Invalid age: \"\$0 > \"/dev/stderr\"}
+                    } } else { print \$0 } }' | "
+
+# Validate dates
+RUN=$RUN" awk -F, '{ INVALID_DATE=0 ; YEAR=0 ; MONTH=0 ; DAY=0 }
+                    { if (\$2 ~ /^([1-9][0-9]{3}-[0-9]{2}-[0-9]{2})$/)
+                    
+                    { YEAR=substr(\$2,1,4) ; MONTH=substr(\$2,6,2) ; DAY=substr(\$2,9,2) ;
+                        if ( YEAR < 1970 || MONTH > 12 || DAY > 31 )
+                        { INVALID_DATE=1 }
+                        else if ( ( MONTH==\"01\" || MONTH==\"03\" || MONTH==\"05\" || MONTH==\"07\" || MONTH==\"08\" || MONTH==\"10\" || MONTH==\"12\") && DAY>31 )
+                        { INVALID_DATE=1 }
+                        else if ( ( MONTH==\"04\" || MONTH==\"06\" || MONTH==\"09\" || MONTH==\"11\" ) && DAY>30 )
+                        { INVALID_DATE=1 }
+                        else if ( MONTH==\"02\" && DAY>29 )
+                        { INVALID_DATE=1 }
+                        else if ( !(( YEAR%4==0 ) && (( YEAR%400==0 ) || ( YEAR%100!=0 ))) && MONTH==\"02\" && DAY>28 )
+                        { INVALID_DATE=1 }
+                    }
+                    else { INVALID_DATE=1  ; print \"this\"}
+                    if ( INVALID_DATE==1 ) { print \"Invalid date: \"\$0 > \"/dev/stderr\"}
+                    else { print \$0 }
+                    }'"
+
+
+# Filter inputs
+RUN=$RUN" | awk -F, '{ if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" && (\$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\")) print \$0 }'"
+
+
+# Definition of command functions
+command_gender()
+{
+    eval "$RUN | awk -F, 'BEGIN { M=0; Z=0; ROUNDMODE = \"D\"}
+        { if (\$4 == \"M\") M+=1 ; else if (\$4 == \"Z\") Z+=1}
+        END { if ($USE_GRAPHIC == 0) 
+        {
+        print \"M: \" M \"\\nZ: \" Z }
+        else {
+        if ($WIDTH != 0) {
+            if (M>Z)
+                { X=M/$WIDTH }
+            else
+                { X=Z/$WIDTH }
+            }
+        else
+            { X=100000 }
+        printf \"M: \" ;
+        for(c=0;c<int(M/X);c++) printf \"\#\" ; printf \"\n\" ;
+        printf \"Z: \" ;
+        for(c=0;c<int(Z/X);c++) printf \"\#\" ; printf \"\n\" 
+        }}'"
+}
+
+command_age()
+{
+    eval "$RUN | awk -F, -v USE_GRAPHIC=$USE_GRAPHIC 'BEGIN { ages[i]=0 ; ages[1]=0 ; ages[2]=0 ; ages[3]=0 ; ages[4]=0 ; ages[5]=0 ; ages[6]=0 ; ages[7]=0 ; ages[8]=0 ; ages[9]=0 ; ages[10]=0 ; ages[11]=0 ; ages[12]=0 ; ROUNDMODE = \"D\"}
+        { if (\$3 >= 0 && \$3 <= 5) ages[0]+=1 ;
+        else if (\$3 >= 6 && \$3 <= 15) ages[1]+=1 ;
+        else if (\$3 >= 16 && \$3 <= 25) ages[2]+=1 ;
+        else if (\$3 >= 26 && \$3 <= 35) ages[3]+=1 ;
+        else if (\$3 >= 36 && \$3 <= 45) ages[4]+=1 ;
+        else if (\$3 >= 46 && \$3 <= 55) ages[5]+=1 ;
+        else if (\$3 >= 56 && \$3 <= 65) ages[6]+=1 ;
+        else if (\$3 >= 66 && \$3 <= 75) ages[7]+=1 ;
+        else if (\$3 >= 76 && \$3 <= 85) ages[8]+=1 ;
+        else if (\$3 >= 86 && \$3 <= 95) ages[9]+=1 ;
+        else if (\$3 >= 96 && \$3 <= 105) ages[10]+=1 ;
+        else if (\$3 >= 106) ages[11]+=1 ;
+        else if (\$3 == \"\") ages[12]+=1 ;
+        }
+        END { BIGGEST=0;
+        if ($USE_GRAPHIC == 0) 
+            {
+            print \"0-5   : \" ages[0] ;
+            print \"6-15  : \" ages[1] ;
+            print \"16-25 : \" ages[2] ;
+            print \"26-35 : \" ages[3] ;
+            print \"36-45 : \" ages[4] ;
+            print \"46-55 : \" ages[5] ;
+            print \"56-65 : \" ages[6] ;
+            print \"66-75 : \" ages[7] ;
+            print \"76-85 : \" ages[8] ;
+            print \"86-95 : \" ages[9] ;
+            print \"96-105: \" ages[10] ;   
+            print \">105  : \" ages[11] ;        
+            if (ages[12] != 0) print \"None  : \" ages[12]
+            }
+        else {
+            if ($WIDTH != 0) {
+                for (i in ages)
+                {
+                    if(ages[i]>BIGGEST)
+                    { BIGGEST=ages[i] }
+                }
+                { X=BIGGEST/$WIDTH }
+            }
+            else
+            { X=10000 }
+            printf \"0-5   : \" ; for(c=0;c<int(ages[0]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"6-15  : \" ; for(c=0;c<int(ages[1]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"16-25 : \" ; for(c=0;c<int(ages[2]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"26-35 : \" ; for(c=0;c<int(ages[3]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"36-45 : \" ; for(c=0;c<int(ages[4]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"46-55 : \" ; for(c=0;c<int(ages[5]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"56-65 : \" ; for(c=0;c<int(ages[6]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"66-75 : \" ; for(c=0;c<int(ages[7]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"76-85 : \" ; for(c=0;c<int(ages[8]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"86-95 : \" ; for(c=0;c<int(ages[9]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"96-105: \" ; for(c=0;c<int(ages[10]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \">105  : \"  ; for(c=0;c<int(ages[11]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            if (ages[12] > 10000) { printf \"None  : \"  ; for(c=0;c<int(ages[12]/X);c++) printf \"\#\" ; printf \"\n\" ;
+        }}}'"
+}
+
+command_daily()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                { daily[\$2]=\$1 }
+                                                                                END { BIGGEST=0 ;
+                                                                                if ($USE_GRAPHIC == 0) 
+                                                                                {
+                                                                                    for (i in daily)
+                                                                                    {
+                                                                                            printf i\": \" daily[i]\"\\n\"
+                                                                                    }
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                if ($WIDTH != 0) {
+                                                                                    for (i in daily)
+                                                                                    {
+                                                                                        if(daily[i]>BIGGEST)
+                                                                                        { BIGGEST=daily[i] }
+                                                                                    }
+                                                                                    { X=BIGGEST/$WIDTH }
+                                                                                }
+                                                                                else
+                                                                                    { X = 500 }
+                                                                                for (i in daily)
+                                                                                {
+                                                                                    printf i\": \" ; for(c=0;c<int(daily[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                }
+                                                                                }}' | sort"
+}
+
+command_monthly()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | cut -c -7 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                    { monthly[\$2]=\$1 }
+                                                                                    END { BIGGEST=0 ;
+                                                                                    if ($USE_GRAPHIC == 0) 
+                                                                                    {
+                                                                                        for (i in monthly)
+                                                                                        {
+                                                                                                printf i\": \" monthly[i]\"\\n\"
+                                                                                        }
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                    if ($WIDTH != 0) {
+                                                                                        for (i in monthly)
+                                                                                        {
+                                                                                            if(monthly[i]>BIGGEST)
+                                                                                            { BIGGEST=monthly[i] }
+                                                                                        }
+                                                                                        { X=BIGGEST/$WIDTH }
+                                                                                    }
+                                                                                    else
+                                                                                        { X = 10000 }
+                                                                                    for (i in monthly)
+                                                                                    {
+                                                                                        printf i\": \" ; for(c=0;c<int(monthly[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                    }
+                                                                                    }}' | sort" 
+}
+
+command_yearly()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | cut -c -4 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                        { yearly[\$2]=\$1 }
+                                                                                        END { BIGGEST=0 ;
+                                                                                        if ($USE_GRAPHIC == 0) 
+                                                                                        {
+                                                                                            for (i in yearly)
+                                                                                            {
+                                                                                                    printf i\": \" yearly[i]\"\\n\"
+                                                                                            }
+                                                                                        }
+                                                                                        else
+                                                                                        {
+                                                                                        if ($WIDTH != 0) {
+                                                                                            for (i in yearly)
+                                                                                            {
+                                                                                                if(yearly[i]>BIGGEST)
+                                                                                                { BIGGEST=yearly[i] }
+                                                                                            }
+                                                                                            { X=BIGGEST/$WIDTH }
+                                                                                        }
+                                                                                        else
+                                                                                            { X = 100000 }
+                                                                                        for (i in yearly)
+                                                                                        {
+                                                                                            printf i\": \" ; for(c=0;c<int(yearly[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                        }
+                                                                                        }}' | sort"
+}
+
+command_countries()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { if (\$8 != \"\") print \$8 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                    { countries[\$2]=\$1 }
+                                                                                    END { BIGGEST=0 ;
+                                                                                    if ($USE_GRAPHIC == 0) 
+                                                                                    {
+                                                                                        for (i in countries)
+                                                                                        {
+                                                                                                printf i\": \" countries[i]\"\\n\"
+                                                                                        }
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                    if ($WIDTH != 0) {
+                                                                                        for (i in countries)
+                                                                                        {
+                                                                                            if(countries[i]>BIGGEST)
+                                                                                            { BIGGEST=countries[i] }
+                                                                                        }
+                                                                                        { X=BIGGEST/$WIDTH }
+                                                                                    }
+                                                                                    else
+                                                                                        { X = 100 }
+                                                                                    for (i in countries)
+                                                                                    {
+                                                                                        printf i\": \" ; for(c=0;c<int(countries[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                    }
+                                                                                    }}' | sort "
+}
+
+command_districts()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { print \$6 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                    {
+                                                                                        if (\$2 == \"\") \$2=\"None\"
+                                                                                        districts[\$2]=\$1
+                                                                                    }
+                                                                                    END { BIGGEST=0 ;
+                                                                                    if ($USE_GRAPHIC == 0) 
+                                                                                    {
+                                                                                        for (i in districts)
+                                                                                        {
+                                                                                                printf i\": \" districts[i]\"\\n\"
+                                                                                        }
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                    if ($WIDTH != 0) {
+                                                                                        for (i in districts)
+                                                                                        {
+                                                                                            if(districts[i]>BIGGEST)
+                                                                                            { BIGGEST=districts[i] }
+                                                                                        }
+                                                                                        { X=BIGGEST/$WIDTH }
+                                                                                    }
+                                                                                    else
+                                                                                        { X = 1000 }
+                                                                                    for (i in districts)
+                                                                                    {
+                                                                                        printf i\": \" ; for(c=0;c<int(districts[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                    }
+                                                                                    }}' | sort"
+}
+
+command_regions()
+{
+    eval "$RUN | awk -F, 'BEGIN { getline } { print \$5 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+                                                                                    {
+                                                                                        if (\$2 == \"\") \$2=\"None\"
+                                                                                        regions[\$2]=\$1
+                                                                                    }
+                                                                                    END { BIGGEST=0 ;
+                                                                                    if ($USE_GRAPHIC == 0) 
+                                                                                    {
+                                                                                        for (i in regions)
+                                                                                        {
+                                                                                                printf i\": \" regions[i]\"\\n\"
+                                                                                        }
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                    if ($WIDTH != 0) {
+                                                                                        for (i in regions)
+                                                                                        {
+                                                                                            if(regions[i]>BIGGEST)
+                                                                                            { BIGGEST=regions[i] }
+                                                                                        }
+                                                                                        { X=BIGGEST/$WIDTH }
+                                                                                    }
+                                                                                    else
+                                                                                        { X = 10000 }
+                                                                                    for (i in regions)
+                                                                                    {
+                                                                                        printf i\": \" ; for(c=0;c<int(regions[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                    }
+                                                                                    }}' | sort" 
+}
+
+
+# Evaluate commands
+
+if [ "$COMMAND" = "none" ] || [ "$COMMAND" = "merge" ];
+then
+    echo "id,datum,vek,pohlavi,kraj_nuts_kod,okres_lau_kod,nakaza_v_zahranici,nakaza_zeme_csu_kod,reportovano_khs"
+    eval "$RUN"
+fi
+
+case $COMMAND in
+    infected)
+        eval "$RUN | awk 'END{print NR}'"
+        ;;
+    gender)
+        command_gender
+        ;;
+    age)
+        command_age
+        ;;
+    daily)
+        command_daily
+        ;;
+    monthly)
+        command_monthly
+        ;;
+    yearly)
+        command_yearly
+        ;;
+    countries)
+        command_countries
+        ;;
+    districts)
+        command_districts
+        ;;
+    regions)
+        command_regions
+        ;;
+esac
