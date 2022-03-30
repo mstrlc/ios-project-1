@@ -1,4 +1,4 @@
-#! /user/bin/env bash
+#! /usr/bin/env bash
 
 export POSIXLY_CORRECT=yes
 export LC_NUMERIC=en_US.UTF-8 
@@ -49,11 +49,9 @@ FILES_COUNTER=0
 AFTER_DATETIME="1970-01-01"
 BEFORE_DATETIME="9999-99-99"
 GENDER=""
+USE_GENDER=0
 USE_GRAPHIC=0
 WIDTH=0
-GENDER[0]="M"
-GENDER[1]="Z"
-
 
 # Get command line arguments
 while [ "$#" -gt 0 ];
@@ -78,13 +76,8 @@ do
             shift
             ;;
         -g)
-            if [ "$2" = "M" ]; 
-            then
-                GENDER[1]=""
-            elif [ "$2" = "Z" ];
-            then
-                GENDER[0]=""
-            fi
+            USE_GENDER=1
+            GENDER="$2"
             shift
             shift
             ;;
@@ -116,27 +109,36 @@ then
     if [[ ${FILES[0]} == *.csv ]];
     then
         OUTPUT=$(cat "${FILES[0]}")
-    else
-        OUTPUT=$(gunzip -c "${FILES[0]}")
+    elif [[ ${FILES[0]} == *.bz2 ]];
+    then
+        OUTPUT=$OUTPUT"\n"$(bunzip2 -c "${FILES[i]}" | tail -n +2 )
+    elif [[ ${FILES[0]} == *.gz ]];
+    then
+        OUTPUT=$OUTPUT"\n"$(gunzip -c "${FILES[i]}" | tail -n +2 )
     fi
     
     for ((i=1;i<"$FILES_COUNTER";i++));
     do
         if [[ ${FILES[i]} == *.csv ]];
         then
-            OUTPUT=$OUTPUT$(tail -n +2 "${FILES[i]}")
-        else
-            OUTPUT=$OUTPUT$(gunzip -c "${FILES[i]}" | tail -n +2 )
+            OUTPUT=$OUTPUT"\n"$(tail -n +2 "${FILES[i]}")
+        elif [[ ${FILES[i]} == *.bz2 ]];
+        then
+            OUTPUT=$OUTPUT"\n"$(bunzip2 -c "${FILES[i]}" | tail -n +2 )
+        elif [[ ${FILES[i]} == *.gz ]];
+        then
+            OUTPUT=$OUTPUT"\n"$(gunzip -c "${FILES[i]}" | tail -n +2 )
         fi
     done
 
-RUN="echo \"$OUTPUT\" | "
+RUN="echo -e \"$OUTPUT\" | "
 fi
+
 
 # Validate input
 
 # Remove empty lines and whitespace, remove header
-RUN=$RUN" awk -F, 'BEGIN { getline } {if ( \$4 !~ /^$/ )
+RUN=$RUN" awk -F, 'BEGIN { getline } {if ( "\$2" !~ /^$/ )
                         { gsub(/ /,\"\"); print \$0 }
                     }' | "
 
@@ -148,9 +150,8 @@ RUN=$RUN" awk -F, '{ if (\$3 !~ /^$/) { { if (\$3 ~ /^([0-9]+)$/)
                     } } else { print \$0 } }' | "
 
 # Validate dates
-RUN=$RUN" awk -F, '{ INVALID_DATE=0 ; YEAR=0 ; MONTH=0 ; DAY=0 }
-                    { if (\$2 ~ /^([1-9][0-9]{3}-[0-9]{2}-[0-9]{2})$/)
-                    
+RUN=$RUN" awk -F, 'BEGIN{ INVALID_DATE=0 ; YEAR=0 ; MONTH=0 ; DAY=0 }
+                    {  if (\$2 !~ /^([0-9]{4}-[0-9]{2}-[0-9]{2})$/)
                     { YEAR=substr(\$2,1,4) ; MONTH=substr(\$2,6,2) ; DAY=substr(\$2,9,2) ;
                         if ( YEAR < 1970 || MONTH > 12 || DAY > 31 )
                         { INVALID_DATE=1 }
@@ -166,22 +167,26 @@ RUN=$RUN" awk -F, '{ INVALID_DATE=0 ; YEAR=0 ; MONTH=0 ; DAY=0 }
                     else { INVALID_DATE=1 }
                     if ( INVALID_DATE==1 ) { print \"Invalid date: \"\$0 > \"/dev/stderr\"}
                     else { print \$0 }
-                    }'"
+                    }' | "
 
+# Filter dates
+RUN=$RUN" awk -F, '{ if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" ) print \$0 }' | "
 
-# Filter inputs
-RUN=$RUN" | awk -F, '{ if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" && ( \$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\") ) print \$0 }'"
-eval "$RUN"
-exit 0
+# Filter genders
+RUN=$RUN" awk -v GENDER=$GENDER -F, '{ if ( $USE_GENDER==1) { if ( GENDER==\$4 ) print \$0 } else { print \$0 } }'"
+
 
 # Definition of command functions
 command_gender()
 {
-    eval "$RUN | awk -F, 'BEGIN { M=0; Z=0; ROUNDMODE = \"D\"}
-        { if (\$4 == \"M\") M+=1 ; else if (\$4 == \"Z\") Z+=1}
-        END { if ($USE_GRAPHIC == 0) 
+    eval "$RUN | awk -F, 'BEGIN { M=0; Z=0; NONE=0; ROUNDMODE = \"D\"}
+        { if (\$4 == \"M\") M+=1 ; if (\$4 == \"Z\") Z+=1 ; if (\$4 == \"\") NONE+=1 }
+        END { NONE=NR-M-Z ; if ($USE_GRAPHIC == 0) 
         {
-        print \"M: \" M \"\\nZ: \" Z }
+        print \"M: \" M \"\\nZ: \" Z 
+        if (NONE!=0)
+        print \"None: \" NONE
+        }
         else {
         if ($WIDTH != 0) {
             if (M>Z)
@@ -194,7 +199,9 @@ command_gender()
         printf \"M: \" ;
         for(c=0;c<int(M/X);c++) printf \"#\" ; printf \"\n\" ;
         printf \"Z: \" ;
-        for(c=0;c<int(Z/X);c++) printf \"#\" ; printf \"\n\" 
+        for(c=0;c<int(Z/X);c++) printf \"#\" ; printf \"\n\" ;
+        if ( NONE!=0 ) { printf \"None: \" ;
+        for(c=0;c<int(NONE/X);c++) printf \"#\" ; printf \"\n\" }
         }}'"
 }
 
@@ -255,13 +262,13 @@ command_age()
             printf \"86-95 : \" ; for(c=0;c<int(ages[9]/X);c++) printf \"#\" ; printf \"\n\" ;
             printf \"96-105: \" ; for(c=0;c<int(ages[10]/X);c++) printf \"#\" ; printf \"\n\" ;
             printf \">105  : \"  ; for(c=0;c<int(ages[11]/X);c++) printf \"#\" ; printf \"\n\" ;
-            if (ages[12] > 10000) { printf \"None  : \"  ; for(c=0;c<int(ages[12]/X);c++) printf \"#\" ; printf \"\n\" ;
+            if (ages[12] != 0) { printf \"None  : \"  ; for(c=0;c<int(ages[12]/X);c++) printf \"#\" ; printf \"\n\" ;
         }}}'"
 }
 
 command_daily()
 {
-    eval "$RUN | awk -F, '{ print \$2 }' | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                 { daily[\$2]=\$1 }
                                                                                 END { BIGGEST=0 ;
                                                                                 if ($USE_GRAPHIC == 0) 
@@ -292,7 +299,7 @@ command_daily()
 
 command_monthly()
 {
-    eval "$RUN | awk -F, '{ print \$2 }' | cut -c -7 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | sort | cut -c -7 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                     { monthly[\$2]=\$1 }
                                                                                     END { BIGGEST=0 ;
                                                                                     if ($USE_GRAPHIC == 0) 
@@ -323,7 +330,7 @@ command_monthly()
 
 command_yearly()
 {
-    eval "$RUN | awk -F, '{ print \$2 }' | cut -c -4 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | sort | cut -c -4 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                         { yearly[\$2]=\$1 }
                                                                                         END { BIGGEST=0 ;
                                                                                         if ($USE_GRAPHIC == 0) 
