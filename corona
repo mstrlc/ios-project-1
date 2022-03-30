@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /user/bin/env bash
 
 export POSIXLY_CORRECT=yes
 export LC_NUMERIC=en_US.UTF-8 
@@ -54,6 +54,7 @@ WIDTH=0
 GENDER[0]="M"
 GENDER[1]="Z"
 
+
 # Get command line arguments
 while [ "$#" -gt 0 ];
 do
@@ -96,7 +97,7 @@ do
             fi
             shift
             ;;
-        *".csv")
+        *".csv" | *".gz" | *".bz2")
             FILES[FILES_COUNTER]="$1"
             FILES_COUNTER=$((FILES_COUNTER+1))
             shift
@@ -108,15 +109,28 @@ do
     esac
 done
 
-# Read all files
+
+# Read all files and decompress, remove headers from other than first
 if [ "${FILES[0]}" != "none" ];
 then
-    OUTPUT=$(cat "${FILES[0]}")
+    if [[ ${FILES[0]} == *.csv ]];
+    then
+        OUTPUT=$(cat "${FILES[0]}")
+    else
+        OUTPUT=$(gunzip -c "${FILES[0]}")
+    fi
+    
     for ((i=1;i<"$FILES_COUNTER";i++));
     do
-        OUTPUT+=$(tail -n +2 "${FILES[i]}")
+        if [[ ${FILES[i]} == *.csv ]];
+        then
+            OUTPUT=$OUTPUT$(tail -n +2 "${FILES[i]}")
+        else
+            OUTPUT=$OUTPUT$(gunzip -c "${FILES[i]}" | tail -n +2 )
+        fi
     done
-RUN="echo \"$OUTPUT\" |"
+
+RUN="echo \"$OUTPUT\" | "
 fi
 
 # Validate input
@@ -149,15 +163,16 @@ RUN=$RUN" awk -F, '{ INVALID_DATE=0 ; YEAR=0 ; MONTH=0 ; DAY=0 }
                         else if ( !(( YEAR%4==0 ) && (( YEAR%400==0 ) || ( YEAR%100!=0 ))) && MONTH==\"02\" && DAY>28 )
                         { INVALID_DATE=1 }
                     }
-                    else { INVALID_DATE=1  ; print \"this\"}
+                    else { INVALID_DATE=1 }
                     if ( INVALID_DATE==1 ) { print \"Invalid date: \"\$0 > \"/dev/stderr\"}
                     else { print \$0 }
                     }'"
 
 
 # Filter inputs
-RUN=$RUN" | awk -F, '{ if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" && (\$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\")) print \$0 }'"
-
+RUN=$RUN" | awk -F, '{ if ("\$2" >= \"$AFTER_DATETIME\" && "\$2" <= \"$BEFORE_DATETIME\" && ( \$4 == \"${GENDER[0]}\" || \$4 == \"${GENDER[1]}\") ) print \$0 }'"
+eval "$RUN"
+exit 0
 
 # Definition of command functions
 command_gender()
@@ -177,15 +192,15 @@ command_gender()
         else
             { X=100000 }
         printf \"M: \" ;
-        for(c=0;c<int(M/X);c++) printf \"\#\" ; printf \"\n\" ;
+        for(c=0;c<int(M/X);c++) printf \"#\" ; printf \"\n\" ;
         printf \"Z: \" ;
-        for(c=0;c<int(Z/X);c++) printf \"\#\" ; printf \"\n\" 
+        for(c=0;c<int(Z/X);c++) printf \"#\" ; printf \"\n\" 
         }}'"
 }
 
 command_age()
 {
-    eval "$RUN | awk -F, -v USE_GRAPHIC=$USE_GRAPHIC 'BEGIN { ages[i]=0 ; ages[1]=0 ; ages[2]=0 ; ages[3]=0 ; ages[4]=0 ; ages[5]=0 ; ages[6]=0 ; ages[7]=0 ; ages[8]=0 ; ages[9]=0 ; ages[10]=0 ; ages[11]=0 ; ages[12]=0 ; ROUNDMODE = \"D\"}
+    eval "$RUN | awk -F, -v USE_GRAPHIC=$USE_GRAPHIC 'BEGIN { ages[0]=0 ; ages[1]=0 ; ages[2]=0 ; ages[3]=0 ; ages[4]=0 ; ages[5]=0 ; ages[6]=0 ; ages[7]=0 ; ages[8]=0 ; ages[9]=0 ; ages[10]=0 ; ages[11]=0 ; ages[12]=0 ; ROUNDMODE = \"D\"}
         { if (\$3 >= 0 && \$3 <= 5) ages[0]+=1 ;
         else if (\$3 >= 6 && \$3 <= 15) ages[1]+=1 ;
         else if (\$3 >= 16 && \$3 <= 25) ages[2]+=1 ;
@@ -228,25 +243,25 @@ command_age()
             }
             else
             { X=10000 }
-            printf \"0-5   : \" ; for(c=0;c<int(ages[0]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"6-15  : \" ; for(c=0;c<int(ages[1]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"16-25 : \" ; for(c=0;c<int(ages[2]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"26-35 : \" ; for(c=0;c<int(ages[3]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"36-45 : \" ; for(c=0;c<int(ages[4]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"46-55 : \" ; for(c=0;c<int(ages[5]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"56-65 : \" ; for(c=0;c<int(ages[6]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"66-75 : \" ; for(c=0;c<int(ages[7]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"76-85 : \" ; for(c=0;c<int(ages[8]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"86-95 : \" ; for(c=0;c<int(ages[9]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \"96-105: \" ; for(c=0;c<int(ages[10]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            printf \">105  : \"  ; for(c=0;c<int(ages[11]/X);c++) printf \"\#\" ; printf \"\n\" ;
-            if (ages[12] > 10000) { printf \"None  : \"  ; for(c=0;c<int(ages[12]/X);c++) printf \"\#\" ; printf \"\n\" ;
+            printf \"0-5   : \" ; for(c=0;c<int(ages[0]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"6-15  : \" ; for(c=0;c<int(ages[1]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"16-25 : \" ; for(c=0;c<int(ages[2]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"26-35 : \" ; for(c=0;c<int(ages[3]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"36-45 : \" ; for(c=0;c<int(ages[4]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"46-55 : \" ; for(c=0;c<int(ages[5]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"56-65 : \" ; for(c=0;c<int(ages[6]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"66-75 : \" ; for(c=0;c<int(ages[7]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"76-85 : \" ; for(c=0;c<int(ages[8]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"86-95 : \" ; for(c=0;c<int(ages[9]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \"96-105: \" ; for(c=0;c<int(ages[10]/X);c++) printf \"#\" ; printf \"\n\" ;
+            printf \">105  : \"  ; for(c=0;c<int(ages[11]/X);c++) printf \"#\" ; printf \"\n\" ;
+            if (ages[12] > 10000) { printf \"None  : \"  ; for(c=0;c<int(ages[12]/X);c++) printf \"#\" ; printf \"\n\" ;
         }}}'"
 }
 
 command_daily()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                 { daily[\$2]=\$1 }
                                                                                 END { BIGGEST=0 ;
                                                                                 if ($USE_GRAPHIC == 0) 
@@ -270,14 +285,14 @@ command_daily()
                                                                                     { X = 500 }
                                                                                 for (i in daily)
                                                                                 {
-                                                                                    printf i\": \" ; for(c=0;c<int(daily[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                    printf i\": \" ; for(c=0;c<int(daily[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                 }
                                                                                 }}' | sort"
 }
 
 command_monthly()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | cut -c -7 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | cut -c -7 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                     { monthly[\$2]=\$1 }
                                                                                     END { BIGGEST=0 ;
                                                                                     if ($USE_GRAPHIC == 0) 
@@ -301,14 +316,14 @@ command_monthly()
                                                                                         { X = 10000 }
                                                                                     for (i in monthly)
                                                                                     {
-                                                                                        printf i\": \" ; for(c=0;c<int(monthly[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                        printf i\": \" ; for(c=0;c<int(monthly[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                     }
                                                                                     }}' | sort" 
 }
 
 command_yearly()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { print \$2 }' | cut -c -4 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$2 }' | cut -c -4 | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                         { yearly[\$2]=\$1 }
                                                                                         END { BIGGEST=0 ;
                                                                                         if ($USE_GRAPHIC == 0) 
@@ -332,14 +347,14 @@ command_yearly()
                                                                                             { X = 100000 }
                                                                                         for (i in yearly)
                                                                                         {
-                                                                                            printf i\": \" ; for(c=0;c<int(yearly[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                            printf i\": \" ; for(c=0;c<int(yearly[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                         }
                                                                                         }}' | sort"
 }
 
 command_countries()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { if (\$8 != \"\") print \$8 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ if (\$8 != \"\") print \$8 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                     { countries[\$2]=\$1 }
                                                                                     END { BIGGEST=0 ;
                                                                                     if ($USE_GRAPHIC == 0) 
@@ -363,14 +378,14 @@ command_countries()
                                                                                         { X = 100 }
                                                                                     for (i in countries)
                                                                                     {
-                                                                                        printf i\": \" ; for(c=0;c<int(countries[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                        printf i\": \" ; for(c=0;c<int(countries[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                     }
                                                                                     }}' | sort "
 }
 
 command_districts()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { print \$6 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$6 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                     {
                                                                                         if (\$2 == \"\") \$2=\"None\"
                                                                                         districts[\$2]=\$1
@@ -397,14 +412,14 @@ command_districts()
                                                                                         { X = 1000 }
                                                                                     for (i in districts)
                                                                                     {
-                                                                                        printf i\": \" ; for(c=0;c<int(districts[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                        printf i\": \" ; for(c=0;c<int(districts[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                     }
                                                                                     }}' | sort"
 }
 
 command_regions()
 {
-    eval "$RUN | awk -F, 'BEGIN { getline } { print \$5 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
+    eval "$RUN | awk -F, '{ print \$5 }' | sort | uniq -c | awk -F' ' 'BEGIN { ROUNDMODE = \"D\" }
                                                                                     {
                                                                                         if (\$2 == \"\") \$2=\"None\"
                                                                                         regions[\$2]=\$1
@@ -431,7 +446,7 @@ command_regions()
                                                                                         { X = 10000 }
                                                                                     for (i in regions)
                                                                                     {
-                                                                                        printf i\": \" ; for(c=0;c<int(regions[i]/X);c++) printf \"\#\" ; printf \"\n\"
+                                                                                        printf i\": \" ; for(c=0;c<int(regions[i]/X);c++) printf \"#\" ; printf \"\n\"
                                                                                     }
                                                                                     }}' | sort" 
 }
@@ -474,3 +489,5 @@ case $COMMAND in
         command_regions
         ;;
 esac
+
+exit 0
